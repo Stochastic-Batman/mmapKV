@@ -27,7 +27,7 @@ test: $(TEST_BIN)
 	@for t in $(TEST_BIN); do ./$$t || exit 1; done
 
 sanitize:
-	$(MAKE) BUILD=build-asan CXXFLAGS="$(CXXFLAGS) -fsanitize=address,undefined -fno-omit-frame-pointer" all
+	$(MAKE) BUILD=build-asan CXXFLAGS="$(CXXFLAGS) -fsanitize=address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer" all
 
 clean:
 	rm -rf build build-asan

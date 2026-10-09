@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install clang and its sanitizer runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang libclang-rt-18-dev
+
+      - name: Build and run tests
+        run: make test
+
+      - name: Build with AddressSanitizer and UndefinedBehaviorSanitizer
+        run: make sanitize
+
+      - name: Run tests under the sanitizers
+        run: |
+          for test in $(find build-asan/tests -type f -perm -u+x); do
+            echo "== $test"
+            "$test"
+          done
