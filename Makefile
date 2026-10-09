@@ -11,7 +11,7 @@ DEPS := $(LIB_OBJ:.o=.d) $(CLI_OBJ:.o=.d) $(TEST_OBJ:.o=.d)
 
 .PHONY: all test sanitize clean
 
-all: $(BUILD)/mmapkv
+all: $(BUILD)/mmapkv $(TEST_BIN)
 
 $(BUILD)/mmapkv: $(LIB_OBJ) $(CLI_OBJ)
 	$(CXX) $(CXXFLAGS) -o $@ $^
