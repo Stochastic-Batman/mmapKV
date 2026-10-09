@@ -12,6 +12,7 @@
 #include <unordered_map>
 #include <utility>
 
+
 namespace mmapkv {
 
 // The version field is written to disk as-is, so the in-memory byte order is the file's byte order.
@@ -77,6 +78,25 @@ void write_file_header(std::span<std::byte> bytes) noexcept {
     std::memcpy(bytes.data() + sizeof(kMagic), &kVersion, sizeof(kVersion));
 }
 
+// Zeroes everything from `from` to the end, but only the chunks that are not already zero.
+// Writing zeros over untouched space would make the OS allocate disk blocks for all of it.
+void zero_tail(std::span<std::byte> bytes, std::size_t from) noexcept {
+    constexpr std::size_t kChunk = 4096;
+    static const std::array<std::byte, kChunk> kZeros{};
+
+    std::size_t offset = from;
+    while (offset < bytes.size()) {
+        const std::size_t chunk_end = std::min(bytes.size(), (offset / kChunk + 1) * kChunk);
+        std::byte* chunk = bytes.data() + offset;
+        const std::size_t length = chunk_end - offset;
+
+        if (std::memcmp(chunk, kZeros.data(), length) != 0) {
+            std::memset(chunk, 0, length);
+        }
+        offset = chunk_end;
+    }
+}
+
 }  // namespace
 
 
@@ -84,6 +104,7 @@ struct Store::Impl {
     MappedFile file;
     Index index;
     std::size_t end = kFileHeaderSize;
+    bool tail_needs_zeroing = true;     // cleared by the first write, see append()
     Options options;
 
     Impl(MappedFile f, Options o) : file(std::move(f)), options(o) {}
@@ -121,10 +142,6 @@ struct Store::Impl {
         }
 
         end = pos;
-
-        // Everything after the last good record is junk from a torn write or a stale one. 
-	// Zero it, so a later record can never run into a leftover record that was hidden behind a torn one.
-        std::memset(bytes.data() + pos, 0, bytes.size() - pos);
     }
 
     // The shared write path for put (value) and remove (nullopt).
@@ -135,6 +152,13 @@ struct Store::Impl {
             if (!file.grow(std::max(file.size() * 2, end + need))) {
                 return false; 
             }
+        }
+
+	// The first write after opening hides any junk left behind the last good record,
+        // so that it can never be read as part of the log later.
+        if (tail_needs_zeroing) {
+            zero_tail(file.bytes(), end);
+            tail_needs_zeroing = false;
         }
 
         // Fetch the span after the grow, which may have moved the mapping.

@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <optional>
 #include <string>
 
@@ -52,6 +53,11 @@ void patch(const fs::path& path, std::streamoff offset, const std::string& bytes
 // Damages the value byte of the put record at `index`, which makes its checksum fail.
 void corrupt_record(const fs::path& path, int index) {
     patch(path, offset_of(index) + kRecordHeaderSize + 1, "X");
+}
+
+std::string read_file(const fs::path& path) {
+    std::ifstream in(path, std::ios::binary);
+    return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
 }
 
 void write_abcd(const fs::path& path) {
@@ -206,6 +212,27 @@ void test_recovery_is_repeatable() {
     }
 }
 
+// Opening and reading a damaged file must not change it. Only a write may discard what follows the damage.
+void test_reading_does_not_modify_a_damaged_file() {
+    TempFile file("readonly");
+    write_abcd(file.path);
+    corrupt_record(file.path, 1);
+    const std::string before = read_file(file.path);
+
+    {
+        std::optional<Store> store = Store::open(file.path);
+        expect(store.has_value(), "readonly: reopen succeeds");
+        if (!store) {
+            return;
+        }
+        expect(store->get("a") == "1" && !store->get("b").has_value() && !store->get("d").has_value(),
+               "readonly: reads see only the records before the damage");
+        expect(store->size() == 1 && store->keys().size() == 1, "readonly: size and keys");
+    }
+
+    expect(read_file(file.path) == before, "readonly: the file is byte-for-byte unchanged after reading");
+}
+
 // A file that was created and grown, but never got its header, is a new store.
 void test_blank_file_is_a_new_store() {
     TempFile file("blank");
@@ -232,6 +259,7 @@ int main() {
     test_garbage_after_the_last_record();
     test_lost_delete_brings_the_key_back();
     test_recovery_is_repeatable();
+    test_reading_does_not_modify_a_damaged_file();
     test_blank_file_is_a_new_store();
 
     return failures == 0 ? 0 : 1;

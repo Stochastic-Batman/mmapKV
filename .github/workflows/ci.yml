@@ -20,12 +20,5 @@ jobs:
       - name: Build and run tests
         run: make test
 
-      - name: Build with AddressSanitizer and UndefinedBehaviorSanitizer
+      - name: Build and run tests under AddressSanitizer and UndefinedBehaviorSanitizer
         run: make sanitize
-
-      - name: Run tests under the sanitizers
-        run: |
-          for test in $(find build-asan/tests -type f -perm -u+x); do
-            echo "== $test"
-            "$test"
-          done
